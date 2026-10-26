@@ -22,6 +22,13 @@ An agentic marketing team that runs inside **Claude Code**: 48 specialist skills
 | 5 | `/hub-grow <slug>` | Weekly: share your numbers, get a scorecard, wins/problems, this week's action plan |
 | any | `/hub-status` | All brands, their stage, next step; `/hub-status <slug>` switches the active brand |
 
+## AI Marketing Office (web UI)
+
+```
+cd office && npm start     # then open http://127.0.0.1:4317
+```
+Ask the AI Manager for work, approve or revise AI drafts, research and verify local leads, schedule weekly lead searches, and read every report. Nothing is posted or sent without you. Details: [office/README.md](office/README.md). Engineering docs: [docs/](docs/).
+
 ## The 48 skills
 
 Each skill runs on its own too, e.g. `/seo-audit nimbu-naturals`, `/linkedin`, `/ad-creative`, `/marketing-council should we start Meta ads now?`.

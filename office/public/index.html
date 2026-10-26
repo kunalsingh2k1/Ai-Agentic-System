@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AI Marketing Office</title>
+<link rel="stylesheet" href="/app.css">
+</head>
+<body>
+<div class="shell">
+  <aside class="side">
+    <div class="logo"><span class="mark">◆</span> Marketing Office</div>
+    <label class="brand-pick">
+      <span>Brand</span>
+      <select id="brand"></select>
+    </label>
+    <nav id="nav">
+      <a href="#/today" data-page="today">Today</a>
+      <a href="#/command" data-page="command">Ask the Manager</a>
+      <a href="#/tasks" data-page="tasks">Tasks</a>
+      <a href="#/approvals" data-page="approvals">Approvals <b id="badge-approvals" class="badge" hidden></b></a>
+      <a href="#/leads" data-page="leads">Leads <b id="badge-leads" class="badge" hidden></b></a>
+      <a href="#/brand" data-page="brand">Brand &amp; reports</a>
+      <a href="#/activity" data-page="activity">Activity</a>
+    </nav>
+    <div class="health" id="health">Connecting…</div>
+  </aside>
+  <main id="main" aria-live="polite"></main>
+</div>
+<div id="toast" class="toast" hidden></div>
+<script src="/app.js"></script>
+</body>
+</html>
