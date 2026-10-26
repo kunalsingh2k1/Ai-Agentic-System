@@ -119,5 +119,77 @@
     "request": "hub-strategy 2026-10-27: first 10 tasks",
     "id": "T-0010",
     "createdAt": "2026-10-26T12:20:11.652Z"
+  },
+  {
+    "task": "Reel script: \"UPI से पेमेंट लेते हो? GST notice आ सकता है?\" (concept 1)",
+    "owner": "Content Agent",
+    "priority": "High",
+    "skill": "personal/reels-scripting",
+    "notes": "Ref format: UPI tax jhatka 2.9M. Calm answer + Free GST Health Check CTA. CA fact-check limits",
+    "deadline": "2026-10-27",
+    "status": "Pending",
+    "request": "viral playbook 2026-10-26",
+    "id": "T-0011",
+    "createdAt": "2026-10-26T12:45:51.378Z"
+  },
+  {
+    "task": "Reel script: Nil GST return 2 मिनट में (concept 6)",
+    "owner": "Content Agent",
+    "priority": "High",
+    "skill": "personal/reels-scripting",
+    "notes": "Portal screen recording, blur GSTIN; close with ₹1,499/quarter",
+    "deadline": "2026-10-28",
+    "status": "Pending",
+    "request": "viral playbook 2026-10-26",
+    "id": "T-0012",
+    "createdAt": "2026-10-26T12:45:51.379Z"
+  },
+  {
+    "task": "Reel script: GST notice आया? पहले ये 3 काम (concept 4)",
+    "owner": "Content Agent",
+    "priority": "High",
+    "skill": "personal/reels-scripting",
+    "notes": "Ref: Notice se saavdhan 2.4M; no fear words",
+    "deadline": "2026-10-29",
+    "status": "Pending",
+    "request": "viral playbook 2026-10-26",
+    "id": "T-0013",
+    "createdAt": "2026-10-26T12:45:51.379Z"
+  },
+  {
+    "task": "Reel script: CA की fees कितनी? हमारी ₹1,499/quarter (concept 13)",
+    "owner": "Content Agent",
+    "priority": "High",
+    "skill": "personal/reels-scripting",
+    "notes": "Upfront-price pillar; ₹5,996/year",
+    "deadline": "2026-10-30",
+    "status": "Pending",
+    "request": "viral playbook 2026-10-26",
+    "id": "T-0014",
+    "createdAt": "2026-10-26T12:45:51.379Z"
+  },
+  {
+    "task": "Reel script: Belated ITR, last date 31 Dec [verify] (concept 9)",
+    "owner": "Content Agent",
+    "priority": "High",
+    "skill": "personal/reels-scripting",
+    "notes": "Weekly countdown series until 31 Dec; ITR price = owner to set",
+    "deadline": "2026-10-31",
+    "status": "Pending",
+    "request": "viral playbook 2026-10-26",
+    "id": "T-0015",
+    "createdAt": "2026-10-26T12:45:51.379Z"
+  },
+  {
+    "task": "Reel script: 1 नवंबर से बदले ये नियम (concept 14)",
+    "owner": "Content Agent",
+    "priority": "High",
+    "skill": "personal/reels-scripting",
+    "notes": "Only officially notified rules; monthly series",
+    "deadline": "2026-11-01",
+    "status": "Pending",
+    "request": "viral playbook 2026-10-26",
+    "id": "T-0016",
+    "createdAt": "2026-10-26T12:45:51.379Z"
   }
 ]

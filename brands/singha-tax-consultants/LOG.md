@@ -17,3 +17,5 @@
 2026-10-27 · marketing-plan · 02-strategy/marketing-plan-2026-10-27.md · 1,000 by 31 Mar: milestones 75/225/425/675/1000, gates, ₹2k→₹5k budget
 2026-10-27 · hub-strategy · 02-strategy/strategy-summary-2026-10-27.md · One-page strategy; base case 300–450 without unlocks; 10 tasks loaded into office
 2026-10-26 · copywriting · 04-content/copywriting-2026-10-26.md · A5 flyer: front Free GST Health Check, back Belated ITR by 31 Dec [verify]; Hindi + Hinglish, 2 tracked WhatsApp QRs
+2026-10-26 · social competitor research · 01-intel/social-competitor-analysis-2026-10-26.md · 16 local firms (only PK Vats active, ~1K views/Short); 2,157 YouTube items; Devanagari titles 3.3× median; UPI/notice fear = biggest hits
+2026-10-26 · viral playbook · 05-social/viral-content-playbook-2026-10-26.md · 15 Reel/Short concepts on proven formats + 2-week posting order
