@@ -10,3 +10,9 @@
 2026-10-26 · ai-seo · 03-seo/ai-seo-2026-10-26.md · 0/6 buyer queries surface Singha; Sulekha in 4/6
 2026-10-26 · social · 05-social/social-2026-10-26.md · Instagram not auditable (login wall); GBP is #1 profile to create
 2026-10-26 · hub-report · reports/brand-report-2026-10-26.md (+.html) · Overall 3.2/10: strong product, invisible brand; GBP + reviews first
+2026-10-27 · brand-positioning · 02-strategy/brand-positioning-2026-10-27.md · Voice: clear, calm, local, upfront; tagline "Due date humari zimmedari"
+2026-10-27 · product-marketing · 02-strategy/product-marketing-2026-10-27.md · Fixed-price, Hindi-friendly, CA-checked filing team for West Delhi shops
+2026-10-27 · offers · 02-strategy/offers-2026-10-27.md · Free GST Health Check, Belated ITR Rescue, Starter Pack, Switch offer, guarantee (prices ⚠ owner)
+2026-10-27 · marketing-loops · 02-strategy/marketing-loops-2026-10-27.md · Primary loops: Market Cluster + Review→Maps; referral secondary
+2026-10-27 · marketing-plan · 02-strategy/marketing-plan-2026-10-27.md · 1,000 by 31 Mar: milestones 75/225/425/675/1000, gates, ₹2k→₹5k budget
+2026-10-27 · hub-strategy · 02-strategy/strategy-summary-2026-10-27.md · One-page strategy; base case 300–450 without unlocks; 10 tasks loaded into office

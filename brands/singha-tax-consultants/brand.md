@@ -72,7 +72,7 @@ Found by web search on 2026-10-26. Owner asked the hub to research them. Claims 
 ## 5. Goals
 - **North-star goal (owner, 2026-10-26):** 1,000 **new** clients by 31 Mar 2027 (existing clients not counted).
   - **Capacity flag [Estimate]:** delivery with a 2-person team. 1,000 new filers on top of existing work needs hiring or automation before the ITR season.
-  - **Feasibility flag [Estimate]:** 22 weeks from today means about 45 new clients a week, on ₹2,000/month. The milestone ladder is pending the decision in DECISIONS.md.
+  - **Date confirmed by owner (2026-10-27):** 31 Mar 2027. Milestones and checkpoint gates are in `02-strategy/strategy-summary-2026-10-27.md`.
 - **Revenue focus:** GST return filing (recurring) + ITR filing (owner, 2026-10-26)
 - **Secondary goals:**
   - Weekly flow of local leads via WhatsApp, phone and email
