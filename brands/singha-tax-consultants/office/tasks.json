@@ -76,12 +76,13 @@
     "owner": "Content Agent",
     "priority": "High",
     "skill": "copywriting",
-    "notes": "A5, print ~1,000 copies",
+    "notes": "I wrote the full copy for the 2-sided A5 flyer, with every block in Hindi (Devanagari) and Hinglish. The front offers a Free GST Health Check: 15 minutes, last 2 quarters of GSTR-1/3B, an ITC mismatch check and a late-fee check, ending in a green/amber/red health card. It also carries the published ₹1,499/quarter fixed GST price. The back offers Belated ITR for AY 2026-27 before 31 Dec [verify]. It covers 3 steps (AIS/26AS check, review by CA Prateek Arora, filing proof on WhatsApp), a document ",
     "deadline": "2026-10-30",
-    "status": "Pending",
+    "status": "Done",
     "request": "hub-strategy 2026-10-27: first 10 tasks",
     "id": "T-0007",
-    "createdAt": "2026-10-26T12:20:11.652Z"
+    "createdAt": "2026-10-26T12:20:11.652Z",
+    "updatedAt": "2026-10-26T12:33:10.205Z"
   },
   {
     "task": "First market walk: Sangam Market, Sagarpur, 20 shops, offer the Free GST Health Check",

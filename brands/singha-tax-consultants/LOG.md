@@ -16,3 +16,4 @@
 2026-10-27 · marketing-loops · 02-strategy/marketing-loops-2026-10-27.md · Primary loops: Market Cluster + Review→Maps; referral secondary
 2026-10-27 · marketing-plan · 02-strategy/marketing-plan-2026-10-27.md · 1,000 by 31 Mar: milestones 75/225/425/675/1000, gates, ₹2k→₹5k budget
 2026-10-27 · hub-strategy · 02-strategy/strategy-summary-2026-10-27.md · One-page strategy; base case 300–450 without unlocks; 10 tasks loaded into office
+2026-10-26 · copywriting · 04-content/copywriting-2026-10-26.md · A5 flyer: front Free GST Health Check, back Belated ITR by 31 Dec [verify]; Hindi + Hinglish, 2 tracked WhatsApp QRs

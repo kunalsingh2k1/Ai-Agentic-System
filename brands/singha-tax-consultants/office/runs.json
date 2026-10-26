@@ -1,0 +1,44 @@
+[
+  {
+    "kind": "worker",
+    "skill": "hub/copywriting",
+    "taskId": "T-0007",
+    "agent": "Skill Worker",
+    "ref": "T-0007",
+    "status": "ok",
+    "id": "R-0001",
+    "createdAt": "2026-10-26T12:31:47.781Z",
+    "updatedAt": "2026-10-26T12:33:10.204Z",
+    "durationMs": 82401,
+    "costUsd": 0.3562093,
+    "changes": [
+      {
+        "path": "04-content/copywriting-2026-10-26.md",
+        "change": "created"
+      },
+      {
+        "path": "LOG.md",
+        "change": "modified"
+      }
+    ],
+    "review": "Pending review",
+    "summary": "I wrote the full copy for the 2-sided A5 flyer, with every block in Hindi (Devanagari) and Hinglish. The front offers a Free GST Health Check: 15 minutes, last 2 quarters of GSTR-1/3B, an ITC mismatch check and a late-fee check, ending in a green/amber/red health card. It also carries the published ₹1,499/quarter fixed GST price. The back offers Belated ITR for AY 2026-27 before 31 Dec [verify]. It covers 3 steps (AIS/26AS check, review by CA Prateek Arora, filing proof on WhatsApp), a document checklist and the price as ₹[owner to set]. Each side gets its own wa.me QR placeholder with a different pre-filled message, so you can see which offer each lead came from. The file also has 3 headline options per side with reasons, CTA variants, design notes and a 6-item checklist to clear before printing. The service guarantee, referral offer, late-fee amounts and any client counts or review claims are left out on purpose, because they aren't cleared or don't exist yet.",
+    "files": [
+      "04-content/copywriting-2026-10-26.md",
+      "LOG.md"
+    ],
+    "nextActions": [
+      "Get CA Prateek Arora to confirm the 31 Dec 2026 belated ITR date and the 'option nahi rehta' line, including how it relates to ITR-U",
+      "Set the ITR price (proposed ₹999 / ₹1,999, not yet approved), the office hours and the weekly cap on health-check slots",
+      "Have a Hindi speaker proofread the Devanagari, then test-scan both QRs on Android and iPhone",
+      "Run /image to design the A5 layout, then set up WhatsApp Business quick replies for 'Health Check' and 'ITR' (/lead-nurture)",
+      "Run /prospecting before the first Sangam Market walk (20 shops)"
+    ],
+    "unsure": [
+      "31 Dec 2026 as the belated ITR deadline for AY 2026-27, and whether the Income-tax Act 2025 changes the wording or section references",
+      "Whether a 15-minute health check can actually be delivered at about 15 per week with a 2-person team",
+      "Office hours and fonts, which are TODO in brand.md",
+      "Devanagari spelling and matras have not been checked by a native proofreader"
+    ]
+  }
+]
