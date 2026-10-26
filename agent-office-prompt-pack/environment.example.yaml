@@ -1,0 +1,84 @@
+# Environment profile — fill this in for the target business BEFORE running the master prompt.
+# Every TODO must be replaced. Secrets never go here: put env-var NAMES only.
+
+workspace:
+  name: TODO Full business name
+  short_name: TODO 3–6 letters            # shown in the top bar: "<short> Signal Board"
+  timezone: TODO e.g. America/New_York    # IANA name
+  currency: TODO e.g. USD
+  locale: en-US
+
+office_pc:
+  os: TODO windows | macos | linux
+  vault_path: TODO e.g. C:\Company\Vault   # markdown / Obsidian folder, read-only for agents
+  runtime_path: TODO e.g. C:\AgentOffice\runtime
+  remote_access: TODO cloudflare-tunnel | tailscale | lan-only
+  database: TODO local-postgres | supabase
+
+users:                                     # role: owner | admin | operator | viewer
+  - { username: TODO, display_name: TODO, email: TODO, role: owner }
+
+entities:                                  # companies / orgs / branches agents act on
+  - key: TODO
+    name: TODO
+    aliases: []                            # words that identify it in a request
+    external_ref: { erp_org_id: TODO }
+    chat_channel: TODO
+    default: true
+entity_relations:                          # who may sell to whom (one-way). Empty = none.
+  # - { from: hq, to: north }
+
+connectors:                                # MCP servers Claude Code will load
+  - key: erp
+    name: TODO ERP name
+    kind: mcp_http                         # mcp_http | mcp_stdio
+    url: TODO                              # or command/args for stdio
+    secret_env: [ERP_MCP_TOKEN]
+  - key: mail
+    name: TODO Email
+    kind: mcp_http
+    url: TODO
+    secret_env: [MAIL_MCP_TOKEN]
+  - key: chat
+    name: TODO Slack / Teams
+    kind: mcp_http
+    url: TODO
+    secret_env: [CHAT_MCP_TOKEN]
+
+notifications:
+  approvals_channel: TODO                  # where "needs you" pings go
+  finance_recipient: TODO                  # financial documents go here
+  daily_digest_time: "18:00"
+
+departments:                               # 3–8 departments; dispatch is added automatically
+  - key: sales
+    name: Sales
+    kpis: [ { key: open_so, label: Open sales orders } ]
+    agents:
+      - key: order-builder
+        name: Order Builder
+        purpose: Builds sales orders from customer requests
+        can_write: true
+        makes_report: false
+        model: sonnet                      # haiku | sonnet | opus
+        connectors:
+          erp: { read: [list_contacts, list_items], write: [create_sales_order] }
+        notes: [SOP - Create Sales Order, Rule - Confirmation Formats]
+        routing: { phrases: [sales order, customer order], words: [so, quote] }
+  # - key: purchasing ...
+  # - key: finance ...
+
+routines:
+  # - { agent: stock-watch, title: Low stock check, time: "08:30", repeat: weekdays, needs_ok: true }
+
+vault_notes:                               # titles must match files in the vault
+  - { path: SOP/SOP - Create Sales Order.md, kind: sop }
+  - { path: Rules/Rule - Confirmation Formats.md, kind: rule }
+  - { path: Rules/Rule - Write Safety.md, kind: rule }
+
+standing_rules:                            # copied into Rule - Write Safety if the vault lacks one
+  - Updating a document: send every existing line item; the list replaces, it does not patch.
+  - Use the rate the human gives; never override it with system cost.
+  - Verify a record id independently before any update.
+  - Never send email or messages; draft only.
+  - TODO add the business's own rules
