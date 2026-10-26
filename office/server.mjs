@@ -8,6 +8,7 @@ import { fileURLToPath } from 'node:url';
 import { Office, UserError } from './lib/office.mjs';
 import { ClaudeRunner, MockRunner } from './lib/runner.mjs';
 import { SLUG_RE } from './lib/brands.mjs';
+import { sync as syncSkills } from './scripts/sync-skills.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(HERE, '..');
@@ -75,6 +76,30 @@ export async function createServer({ office, token = process.env.OFFICE_TOKEN ||
     ['POST', /^\/api\/brands\/([^/]+)\/report$/, async ([s]) => office.report(s)],
     ['POST', /^\/api\/brands\/([^/]+)\/routines$/, async ([s], b) => office.addRoutine(s, b)],
     ['PATCH', /^\/api\/brands\/([^/]+)\/routines\/(W-\d+)$/, async ([s, id], b) => office.updateRoutine(s, id, b)],
+    // Skills library
+    ['GET', /^\/api\/skills$/, async (_, __, q) => ({
+      stats: office.skills.stats(),
+      skills: office.skills.search(q.get('q') || '', { limit: Math.min(parseInt(q.get('limit'), 10) || 60, 200), source: q.get('source') || '', category: q.get('category') || '' }),
+    })],
+    ['GET', /^\/api\/skill$/, async (_, __, q) => {
+      const c = await office.skills.content(q.get('id') || '');
+      if (!c) throw new UserError('Skill not found', 404);
+      return { ...c, resources: c.resources.map((r) => r.path) };
+    }],
+    ['POST', /^\/api\/skills\/sync$/, async () => {
+      const r = await syncSkills({ log: () => {} });
+      await office.skills.load();
+      return { ...r, stats: office.skills.stats() };
+    }],
+    // Skill workers (edit files) and their review
+    ['POST', /^\/api\/brands\/([^/]+)\/tasks\/(T-\d+)\/run$/, async ([s, id], b) => office.runSkill(s, id, b)],
+    ['POST', /^\/api\/brands\/([^/]+)\/skills\/run$/, async ([s], b) => office.runSkillDirect(s, b)],
+    ['POST', /^\/api\/brands\/([^/]+)\/runs\/(R-\d+)\/review$/, async ([s, id], b) => office.reviewRun(s, id, b)],
+    // Orchestrator
+    ['POST', /^\/api\/brands\/([^/]+)\/plans$/, async ([s], b) => office.plan(s, b.goal)],
+    ['PATCH', /^\/api\/brands\/([^/]+)\/plans\/(P-\d+)$/, async ([s, id], b) => office.updatePlan(s, id, b)],
+    ['POST', /^\/api\/brands\/([^/]+)\/plans\/(P-\d+)\/run$/, async ([s, id]) => office.runPlan(s, id)],
+    ['POST', /^\/api\/brands\/([^/]+)\/plans\/(P-\d+)\/cancel$/, async ([s, id]) => office.cancelPlan(s, id)],
   ];
 
   const server = http.createServer(async (req, res) => {
@@ -150,14 +175,14 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
   if (!runner.available()) console.warn('Claude CLI not found. Agents will fail until you set CLAUDE_BIN or run with OFFICE_RUNNER=mock.');
   const office = await new Office({
     brandsDir: path.join(ROOT, 'brands'),
-    skillsDir: path.join(ROOT, '.claude', 'skills'),
+    root: ROOT,
     runner,
     dailyRunLimit: parseInt(process.env.OFFICE_DAILY_RUN_LIMIT, 10) || 40,
   }).init();
   const server = await createServer({ office });
   const host = process.env.HOST || '127.0.0.1';
   const port = parseInt(process.env.PORT, 10) || 4317;
-  server.listen(port, host, () => console.log(`AI Marketing Office on http://${host}:${port} (runner: ${runner.kind})`));
+  server.listen(port, host, () => console.log(`AI Marketing Office on http://${host}:${port} (runner: ${runner.kind}, ${office.skills.stats().count} skills)`));
   const timer = setInterval(() => office.tick().catch((e) => console.error('Routine tick failed:', e.message)), 60_000);
   const stop = () => {
     clearInterval(timer);

@@ -4,7 +4,7 @@ This project is an agentic marketing team that runs inside Claude Code. You (Cla
 
 The `agent-office-prompt-pack/` folder is a separate project. Ignore it unless the user asks about it.
 
-**AI Marketing Office** (`office/`): a local web UI on the same brand folders, with AI Manager tasks, drafts behind an approval gate, lead research and daily reports. Start it with `cd office && npm start`. When working on its code, read `docs/HANDOVER.md` and `docs/CONSTRAINTS.md` first, run `npm test` before calling anything done, log engineering decisions in `docs/DECISIONS.md`, and update `docs/HANDOVER.md` at the end of the session.
+**AI Marketing Office** (`office/`): a local web UI on the same brand folders, with AI Manager tasks, drafts behind an approval gate, lead research and daily reports. Start it with `cd office && npm start`. Its agents use the skills in `skills-library/` (your personal Claude skills; re-sync with `cd office && npm run sync-skills`) plus `.claude/skills`. The Skill Worker may edit files inside one brand folder only, with Keep/Undo review, and the Orchestrator runs approved multi-step plans. When working on its code, read `docs/HANDOVER.md` and `docs/CONSTRAINTS.md` first, run `npm test` before calling anything done, log engineering decisions in `docs/DECISIONS.md`, and update `docs/HANDOVER.md` at the end of the session.
 
 ## Pipeline
 

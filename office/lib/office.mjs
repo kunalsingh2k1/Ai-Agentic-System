@@ -2,7 +2,10 @@
 // approval; ethical lead research; daily report; routines) on top of the marketing hub's brands.
 // HTTP lives in server.mjs; everything here is plain async methods so it can be tested directly.
 import { promises as fs } from 'node:fs';
+import path from 'node:path';
 import { Store } from './store.mjs';
+import { SkillLibrary } from './skills.mjs';
+import { snapshot, diff, undoRecord, restore } from './snapshot.mjs';
 import { Brands } from './brands.mjs';
 import { buildAgents, normaliseLead, leadKey, InvalidOutput } from './agents.mjs';
 import { extractJson } from './runner.mjs';
@@ -21,10 +24,12 @@ export class UserError extends Error {
 const today = () => new Date().toISOString().slice(0, 10);
 
 export class Office {
-  constructor({ brandsDir, skillsDir, runner, maxConcurrent = 2, dailyRunLimit = 40 }) {
+  constructor({ brandsDir, root, runner, maxConcurrent = 2, dailyRunLimit = 40 }) {
     this.store = new Store(brandsDir);
     this.brands = new Brands(brandsDir);
-    this.skillsDir = skillsDir;
+    this.brandsDir = brandsDir;
+    this.skills = new SkillLibrary({ root });
+    this.brandLocks = new Map();
     this.runner = runner;
     this.maxConcurrent = maxConcurrent;
     this.dailyRunLimit = dailyRunLimit;
@@ -35,9 +40,27 @@ export class Office {
   }
 
   async init() {
-    const skills = await fs.readdir(this.skillsDir).catch(() => []);
-    this.agents = buildAgents({ skills: skills.filter((s) => !s.startsWith('.')).sort() });
+    await this.skills.load();
+    this.agents = buildAgents();
     return this;
+  }
+
+  // Candidate skills for a request, in the shape the agents' prompts expect: the best keyword
+  // matches from the whole library first, then every hub skill (the house methods are always
+  // on the menu even when the request doesn't use their words).
+  candidates(query, slug, limit = 25) {
+    const picked = this.skills.search(query, { limit, brandHint: slug.split('-')[0] });
+    const ids = new Set(picked.map((s) => s.id));
+    for (const s of this.skills.skills) if (s.source === 'hub' && !ids.has(s.id)) picked.push(s);
+    return picked.map((s) => ({ id: s.id, description: s.description }));
+  }
+
+  // Edit agents run one at a time per brand, so each run's before/after diff is its own.
+  withBrandLock(slug, fn) {
+    const prev = this.brandLocks.get(slug) || Promise.resolve();
+    const next = prev.then(fn, fn);
+    this.brandLocks.set(slug, next.catch(() => {}));
+    return next;
   }
 
   async requireBrand(slug) {
@@ -69,25 +92,27 @@ export class Office {
     this.runsToday.count++;
   }
 
-  async runAgent(slug, name, input, ref = '') {
+  async runAgent(slug, name, input, ref = '', { cwd, record = {}, onStart } = {}) {
     const agent = this.agents[name];
     this.countRun();
-    const run = await this.store.insert(slug, 'runs', { agent: agent.label, ref, status: 'queued' });
+    const run = await this.store.insert(slug, 'runs', { ...record, agent: agent.label, ref, status: 'queued' });
+    onStart?.(run);
     await this.acquire();
     const started = Date.now();
     try {
       await this.store.modify(slug, 'runs', run.id, (r) => { r.status = 'running'; });
       const ctx = await this.brands.agentContext(slug);
       const prompt = agent.prompt({ ...input, today: today() }, ctx);
-      let res = await this.runner.run(agent, prompt);
+      let res = await this.runner.run(agent, prompt, { cwd });
       let parsed;
       try {
-        parsed = agent.validate(extractJson(res.text));
+        parsed = agent.validate(extractJson(res.text), input);
       } catch (e) {
-        if (!(e instanceof InvalidOutput)) throw e;
+        // Edit agents are not re-run: a second run could repeat file changes.
+        if (!(e instanceof InvalidOutput) || agent.edit) throw e;
         // The guide's rule: validate, retry once, then hand to a human.
-        res = await this.runner.run(agent, `${prompt}\n\nYour previous reply could not be used (${e.message}). Reply again with ONLY the JSON object.`);
-        parsed = agent.validate(extractJson(res.text));
+        res = await this.runner.run(agent, `${prompt}\n\nYour previous reply could not be used (${e.message}). Reply again with ONLY the JSON object.`, { cwd });
+        parsed = agent.validate(extractJson(res.text), input);
       }
       await this.store.modify(slug, 'runs', run.id, (r) => {
         r.status = 'ok';
@@ -124,7 +149,7 @@ export class Office {
     if (!request) throw new UserError('Write what you need first');
     this.countRunPreview();
     this.background((async () => {
-      const { tasks } = await this.runAgent(slug, 'manager', { request }, 'command');
+      const { tasks } = await this.runAgent(slug, 'manager', { request, candidates: this.candidates(request, slug) }, 'command');
       await this.store.insertMany(slug, 'tasks', tasks.map((t) => ({ ...t, request, status: 'Pending' })));
     })());
     return { accepted: true };
@@ -142,7 +167,8 @@ export class Office {
     return this.store.insert(slug, 'tasks', {
       task, request: 'Added manually', status: 'Pending', notes: String(body.notes || '').slice(0, 500),
       priority: ['High', 'Medium', 'Low'].includes(body.priority) ? body.priority : 'Medium',
-      owner: body.owner || 'You', deadline: /^\d{4}-\d{2}-\d{2}$/.test(body.deadline) ? body.deadline : '', skill: '',
+      owner: ['You', 'Content Agent', 'Research Agent', 'Follow-up Agent', 'Skill Worker'].includes(body.owner) ? body.owner : 'You',
+      deadline: /^\d{4}-\d{2}-\d{2}$/.test(body.deadline) ? body.deadline : '', skill: this.skills.resolve(body.skill)?.id || '',
     });
   }
 
@@ -172,8 +198,13 @@ export class Office {
       history: [{ at: new Date().toISOString(), action: 'Draft requested' }],
     });
     await this.store.modify(slug, 'tasks', taskId, (t) => { if (t.status === 'Pending') t.status = 'In Progress'; });
-    this.background(this.generate(slug, draft.id, { task: task.task, platform, instructions }));
+    this.background(this.generate(slug, draft.id, { task: task.task, platform, instructions, guide: await this.guideFor(task) }));
     return draft;
+  }
+
+  async guideFor(task) {
+    const skill = this.skills.resolve(task?.skill);
+    return skill ? this.skills.content(skill.id) : null;
   }
 
   async outreach(slug, leadId, { purpose = 'first', instructions = '' } = {}) {
@@ -271,7 +302,7 @@ export class Office {
         this.background(this.generate(slug, id, { lead, instructions: `Rewrite of: ${draft.body}\nChange: ${note}` }, 'followup'));
       } else {
         const task = (await this.store.read(slug, 'tasks')).find((t) => t.id === draft.taskId);
-        this.background(this.generate(slug, id, { task: task?.task || draft.title, platform: draft.platform, instructions: draft.instructions, previous: draft.body, feedback: note }));
+        this.background(this.generate(slug, id, { task: task?.task || draft.title, platform: draft.platform, instructions: draft.instructions, previous: draft.body, feedback: note, guide: await this.guideFor(task) }));
       }
       return row;
     }
@@ -333,6 +364,196 @@ export class Office {
     });
     if (!row) throw new UserError('Lead not found', 404);
     return row;
+  }
+
+  // ───────────── skill workers (agents that edit files in the brand folder) ─────────────
+
+  async runSkill(slug, taskId, { instructions = '' } = {}) {
+    await this.requireBrand(slug);
+    const task = (await this.store.read(slug, 'tasks')).find((t) => t.id === taskId);
+    if (!task) throw new UserError('Task not found', 404);
+    if (!this.skills.resolve(task.skill)) throw new UserError('This task has no skill. Pick one on the Skills page.');
+    this.countRunPreview();
+    this.background(this.workerJob(slug, task, String(instructions).slice(0, 1500)));
+    return { accepted: true };
+  }
+
+  // From the Skills page: a one-off task for a chosen skill, run straight away.
+  async runSkillDirect(slug, { skillId, task, instructions = '' }) {
+    const skill = this.skills.resolve(skillId);
+    if (!skill) throw new UserError('Unknown skill');
+    const row = await this.addTask(slug, { task: String(task || '').trim() || `Run ${skill.name}`, owner: 'Skill Worker', skill: skill.id, priority: 'Medium' });
+    await this.runSkill(slug, row.id, { instructions });
+    return row;
+  }
+
+  // Snapshot → worker run in the brand folder → diff → review record. Never retried.
+  workerJob(slug, task, instructions = '', previous = '') {
+    return this.withBrandLock(slug, async () => {
+      const skill = this.skills.resolve(task.skill);
+      const dir = path.join(this.brandsDir, slug);
+      await this.store.modify(slug, 'tasks', task.id, (t) => { t.status = 'In Progress'; });
+      const before = await snapshot(dir);
+      let runId = null;
+      let out = null;
+      let error = null;
+      try {
+        out = await this.runAgent(slug, 'worker', { task: task.task, instructions, guide: await this.skills.content(skill.id), previous, slug }, task.id,
+          { cwd: dir, record: { kind: 'worker', skill: skill.id, taskId: task.id }, onStart: (r) => { runId = r.id; } });
+      } catch (e) {
+        error = e;
+      }
+      const after = await snapshot(dir);
+      const changes = diff(before, after);
+      if (runId && changes.length) {
+        const file = path.join(dir, 'office', 'snapshots', `${runId}.json`);
+        await fs.mkdir(path.dirname(file), { recursive: true });
+        await fs.writeFile(file, JSON.stringify(undoRecord(before, after, changes)));
+        const old = (await fs.readdir(path.dirname(file))).sort().slice(0, -30);
+        for (const f of old) await fs.rm(path.join(path.dirname(file), f), { force: true });
+      }
+      if (runId) {
+        await this.store.modify(slug, 'runs', runId, (r) => {
+          r.changes = changes;
+          r.review = changes.length ? 'Pending review' : 'No changes';
+          if (out) Object.assign(r, { summary: out.summary, files: out.files, nextActions: out.next_actions, unsure: out.unsure });
+        });
+      }
+      await this.store.modify(slug, 'tasks', task.id, (t) => {
+        t.status = error ? 'Blocked' : 'Done';
+        t.notes = error ? `Skill run failed: ${friendlyError(error)}` : (out.summary || '').slice(0, 500);
+      });
+      if (error) throw error;
+      return { ...out, changes, runId };
+    });
+  }
+
+  async reviewRun(slug, runId, { action }) {
+    await this.requireBrand(slug);
+    const run = (await this.store.read(slug, 'runs')).find((r) => r.id === runId);
+    if (!run || run.kind !== 'worker') throw new UserError('Run not found', 404);
+    if (run.review !== 'Pending review') throw new UserError(`This run is already "${run.review}"`, 409);
+    if (action === 'keep') return this.store.modify(slug, 'runs', runId, (r) => { r.review = 'Kept'; r.reviewedAt = new Date().toISOString(); });
+    if (action !== 'undo') throw new UserError('Unknown action');
+    const dir = path.join(this.brandsDir, slug);
+    const record = JSON.parse(await fs.readFile(path.join(dir, 'office', 'snapshots', `${runId}.json`), 'utf8').catch(() => 'null'));
+    if (!record) throw new UserError('The undo snapshot for this run is missing', 410);
+    const result = await this.withBrandLock(slug, () => restore(dir, record));
+    return this.store.modify(slug, 'runs', runId, (r) => {
+      r.review = 'Undone';
+      r.reviewedAt = new Date().toISOString();
+      r.undo = result;
+    });
+  }
+
+  // ───────────── orchestrator: goal → plan (owner approves) → steps run in order ─────────────
+
+  async plan(slug, goal) {
+    await this.requireBrand(slug);
+    goal = String(goal || '').trim().slice(0, 2000);
+    if (!goal) throw new UserError('Describe the goal first');
+    this.countRunPreview();
+    const plan = await this.store.insert(slug, 'plans', { goal, title: '', status: 'Planning', steps: [] });
+    this.background((async () => {
+      try {
+        const out = await this.runAgent(slug, 'orchestrator', { goal, candidates: this.candidates(goal, slug, 40) }, plan.id);
+        await this.store.modify(slug, 'plans', plan.id, (p) => { p.title = out.title; p.steps = out.steps; p.status = 'Proposed'; });
+      } catch (e) {
+        await this.store.modify(slug, 'plans', plan.id, (p) => { p.status = 'Failed'; p.error = friendlyError(e); });
+      }
+    })());
+    return plan;
+  }
+
+  async updatePlan(slug, id, body) {
+    await this.requireBrand(slug);
+    const row = await this.store.modify(slug, 'plans', id, (p) => {
+      if (!['Proposed', 'Stopped'].includes(p.status)) throw new UserError(`Plan is "${p.status}" and can't be edited`, 409);
+      const step = p.steps.find((st) => st.n === Number(body.n));
+      if (!step) throw new UserError('Step not found', 404);
+      if (body.skip !== undefined && step.status !== 'Done') step.status = body.skip ? 'Skipped' : 'Planned';
+      if (typeof body.instructions === 'string') step.instructions = body.instructions.slice(0, 1500);
+    });
+    if (!row) throw new UserError('Plan not found', 404);
+    return row;
+  }
+
+  async runPlan(slug, id) {
+    await this.requireBrand(slug);
+    const row = await this.store.modify(slug, 'plans', id, (p) => {
+      if (!['Proposed', 'Stopped'].includes(p.status)) throw new UserError(`Plan is "${p.status}"`, 409);
+      p.status = 'Running';
+      p.error = undefined;
+      for (const st of p.steps) if (st.status === 'Failed') st.status = 'Planned'; // resume from the failed step
+    });
+    if (!row) throw new UserError('Plan not found', 404);
+    this.countRunPreview();
+    this.background(this.executePlan(slug, id));
+    return row;
+  }
+
+  async cancelPlan(slug, id) {
+    await this.requireBrand(slug);
+    const row = await this.store.modify(slug, 'plans', id, (p) => {
+      if (['Done', 'Cancelled'].includes(p.status)) throw new UserError(`Plan is already "${p.status}"`, 409);
+      p.status = 'Cancelled';
+    });
+    if (!row) throw new UserError('Plan not found', 404);
+    return row;
+  }
+
+  // Runs steps one at a time in order. A failed step stops the plan (no automatic retries);
+  // "Run plan" again resumes from it. Cancel takes effect between steps.
+  async executePlan(slug, id) {
+    for (;;) {
+      const plan = (await this.store.read(slug, 'plans')).find((p) => p.id === id);
+      if (!plan || plan.status !== 'Running') return;
+      const finished = (n) => ['Done', 'Skipped'].includes(plan.steps.find((s) => s.n === n)?.status);
+      const step = plan.steps.find((s) => s.status === 'Planned' && s.dependsOn.every(finished));
+      if (!step) {
+        const allDone = plan.steps.every((s) => ['Done', 'Skipped'].includes(s.status));
+        await this.store.modify(slug, 'plans', id, (p) => {
+          p.status = allDone ? 'Done' : 'Stopped';
+          if (!allDone) p.error = 'A step is waiting on a step that did not finish.';
+          if (allDone) p.finishedAt = new Date().toISOString();
+        });
+        if (allDone) await this.brands.appendLog(slug, `plan ${id} · Orchestrator plan done: ${plan.title}`);
+        return;
+      }
+      const setStep = (fn) => this.store.modify(slug, 'plans', id, (p) => fn(p.steps.find((s) => s.n === step.n)));
+      await setStep((s) => { s.status = 'Running'; s.startedAt = new Date().toISOString(); });
+      const previous = plan.steps.filter((s) => step.dependsOn.includes(s.n) || (s.status === 'Done' && s.files?.length))
+        .map((s) => `Step ${s.n} (${s.title}): ${s.summary || ''}${s.files?.length ? ` Files: ${s.files.join(', ')}` : ''}`).join('\n');
+      try {
+        const owner = { worker: 'Skill Worker', research: 'Research Agent', content: 'Content Agent' }[step.agent];
+        const task = await this.addTask(slug, { task: step.title, owner, skill: step.skill, priority: 'High', notes: `Plan ${id}, step ${step.n}` });
+        let result;
+        if (step.agent === 'worker') {
+          if (!this.skills.resolve(step.skill)) throw new Error('This step has no valid skill');
+          const out = await this.workerJob(slug, task, step.instructions, previous);
+          result = { summary: out.summary, files: out.files, runId: out.runId };
+        } else if (step.agent === 'research') {
+          const { job } = await this.research(slug, { niche: step.niche, area: step.area }, `plan ${id}`);
+          const r = await job;
+          await this.store.modify(slug, 'tasks', task.id, (t) => { t.status = 'Done'; });
+          result = { summary: `Added ${r.added} leads to verify (${r.duplicates} duplicates skipped).` };
+        } else {
+          const draft = await this.store.insert(slug, 'drafts', {
+            kind: 'content', taskId: task.id, title: step.title, platform: step.platform, instructions: step.instructions,
+            status: 'Generating', body: '', versions: [], history: [{ at: new Date().toISOString(), action: `Draft requested by plan ${id}` }],
+          });
+          await this.generate(slug, draft.id, { task: step.title, platform: step.platform, instructions: `${step.instructions}\n${previous}`, guide: await this.guideFor(task) });
+          const d = (await this.store.read(slug, 'drafts')).find((x) => x.id === draft.id);
+          if (d.status === 'Failed') throw new Error(d.error || 'Draft failed');
+          result = { summary: `Draft ${d.id} is waiting for your approval.`, draftId: d.id };
+        }
+        await setStep((s) => Object.assign(s, result, { status: 'Done', taskId: task.id, finishedAt: new Date().toISOString() }));
+      } catch (e) {
+        await setStep((s) => { s.status = 'Failed'; s.error = friendlyError(e); });
+        await this.store.modify(slug, 'plans', id, (p) => { p.status = 'Stopped'; p.error = `Step ${step.n} failed. Fix it or skip it, then run the plan again.`; });
+        return;
+      }
+    }
   }
 
   // ───────────── daily report (deterministic: it can't invent progress) ─────────────
@@ -413,9 +634,10 @@ export class Office {
 
   async state(slug) {
     await this.requireBrand(slug);
-    const [tasks, drafts, leads, runs, routines, log] = await Promise.all(
-      ['tasks', 'drafts', 'leads', 'runs', 'routines', 'log'].map((c) => this.store.read(slug, c)));
-    return { tasks, drafts, leads, runs: runs.slice(-40).reverse(), routines, log: log.slice(-14).reverse(),
+    const [tasks, drafts, leads, runs, routines, log, plans] = await Promise.all(
+      ['tasks', 'drafts', 'leads', 'runs', 'routines', 'log', 'plans'].map((c) => this.store.read(slug, c)));
+    return { tasks, drafts, leads, runs: runs.slice(-60).reverse(), routines, log: log.slice(-14).reverse(), plans: plans.slice(-20).reverse(),
+      reviews: runs.filter((r) => r.kind === 'worker' && r.review === 'Pending review').length,
       busy: runs.some((r) => r.status === 'queued' || r.status === 'running') };
   }
 }

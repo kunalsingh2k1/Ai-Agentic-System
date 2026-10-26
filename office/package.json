@@ -3,10 +3,13 @@
   "private": true,
   "type": "module",
   "description": "AI Digital Office for the marketing hub: tasks, approvals, leads, reports",
-  "engines": { "node": ">=20" },
+  "engines": {
+    "node": ">=20"
+  },
   "scripts": {
     "start": "node server.mjs",
     "demo": "OFFICE_RUNNER=mock node server.mjs",
-    "test": "node --test test/*.test.mjs"
+    "test": "node --test test/*.test.mjs",
+    "sync-skills": "node scripts/sync-skills.mjs"
   }
 }

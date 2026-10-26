@@ -2,3 +2,8 @@
 brands/*/data/*
 !brands/*/data/.gitkeep
 brands/.active
+
+# Personal skills copied from ~/.claude (re-create: cd office && npm run sync-skills)
+skills-library/
+# Office undo snapshots
+brands/*/office/snapshots/

@@ -2,7 +2,8 @@
 // AI Marketing Office UI. Plain DOM, no framework. Every piece of AI or brand text is inserted as
 // text (never as HTML) except Markdown, which is HTML-escaped before formatting.
 
-const S = { brands: [], slug: '', brand: null, state: null, health: null, page: 'today', stateKey: '', approvalsFilter: 'Awaiting approval', leadFilter: 'all', file: null, token: '' };
+const S = { brands: [], slug: '', brand: null, state: null, health: null, page: 'today', stateKey: '', approvalsFilter: 'Awaiting approval', approvalsTab: 'drafts', leadFilter: 'all', file: null, token: '',
+  skillQuery: { q: '', source: '', category: '' }, skillResults: null, skillStats: null, skillPreview: {} };
 try { S.token = localStorage.getItem('office-token') || ''; } catch { /* storage blocked */ }
 
 const $ = (sel) => document.querySelector(sel);
@@ -75,8 +76,8 @@ const safeUrl = (u) => (/^https?:\/\//i.test(u || '') ? u : null);
 const extLink = (url, label) => (safeUrl(url) ? h('a', { href: url, target: '_blank', rel: 'noopener noreferrer' }, label || url.replace(/^https?:\/\/(www\.)?/, '').slice(0, 40)) : '');
 
 const statusTag = (s) => {
-  const cls = { 'Awaiting approval': 'warn', Approved: 'good', Done: 'good', Verified: 'good', Client: 'good', Rejected: 'bad', Failed: 'bad', Blocked: 'bad', 'Do not contact': 'bad', ok: 'good', error: 'bad', running: '', queued: 'muted', Generating: '' }[s];
-  return h('span', { class: `tag ${cls ?? 'muted'}` }, s === 'Generating' || s === 'running' ? [h('span', { class: 'spin' }), ' '] : null, s);
+  const cls = { 'Awaiting approval': 'warn', 'Pending review': 'warn', Proposed: 'warn', Stopped: 'bad', Approved: 'good', Done: 'good', Kept: 'good', Verified: 'good', Client: 'good', Rejected: 'bad', Failed: 'bad', Blocked: 'bad', Undone: 'muted', Skipped: 'muted', Cancelled: 'muted', 'Do not contact': 'bad', ok: 'good', error: 'bad', running: '', Running: '', Planning: '', queued: 'muted', Generating: '' }[s];
+  return h('span', { class: `tag ${cls ?? 'muted'}` }, ['Generating', 'running', 'Running', 'Planning'].includes(s) ? [h('span', { class: 'spin' }), ' '] : null, s);
 };
 
 // ───────────── Markdown (escape first, then format) ─────────────
@@ -200,7 +201,7 @@ function taskCard(t) {
     h('div', { class: 'row' },
       h('span', { class: `tag ${t.priority === 'High' ? 'bad' : t.priority === 'Medium' ? 'warn' : 'muted'}` }, t.priority),
       h('span', { class: 'tag muted' }, t.owner),
-      t.skill ? h('span', { class: 'tag' }, `/${t.skill}`) : null,
+      t.skill ? h('a', { class: 'tag', href: '#/skills', title: 'Skill', onclick: () => { S.skillQuery = { q: t.skill.split('/').pop(), source: '', category: '' }; S.skillResults = null; } }, t.skill.includes('/') ? t.skill : `hub/${t.skill}`) : null,
       t.deadline ? h('span', { class: 'meta' }, `Due ${t.deadline}`) : null,
       h('span', { class: 'meta' }, t.id)),
     t.notes ? h('div', { class: 'meta', style: 'margin-top:6px' }, t.notes) : null,
@@ -208,6 +209,8 @@ function taskCard(t) {
       h('select', { 'aria-label': 'Status', onchange: (e) => act(() => api('PATCH', B(`/tasks/${t.id}`), { status: e.target.value })) },
         ['Pending', 'In Progress', 'Blocked', 'Done'].map((s) => h('option', { selected: s === t.status }, s))),
       t.status !== 'Done' && t.owner !== 'Research Agent' ? h('button', { class: 'btn sm', onclick: () => { draftForm.hidden = !draftForm.hidden; } }, 'Draft with AI') : null,
+      t.skill && t.status !== 'Done' ? h('button', { class: 'btn sm primary', title: 'A Skill Worker follows this skill and saves files in the brand folder. You review the changes afterwards and can undo them.',
+        onclick: () => act(() => api('POST', B(`/tasks/${t.id}/run`), {}), 'Skill Worker started. Review its file changes in Approvals.') }, 'Run skill (edits files)') : null,
       t.owner === 'Research Agent' && t.status !== 'Done' ? h('a', { class: 'btn sm', href: '#/leads' }, 'Research leads') : null),
     draftForm);
 }
@@ -261,12 +264,46 @@ function draftCard(d) {
     d.history?.length ? h('details', {}, h('summary', {}, 'History'), h('ul', {}, d.history.map((x) => h('li', { class: 'meta' }, `${fmtDate(x.at)} · ${x.action}${x.note ? `: ${x.note}` : ''}`)))) : null);
 }
 
+function changeCard(r) {
+  const open = r.review === 'Pending review';
+  const icon = { created: '+', modified: '~', deleted: '−' };
+  return h('div', { class: 'panel' },
+    h('div', { class: 'row spread' },
+      h('div', {}, h('h3', {}, `${r.skill || r.agent} · ${r.ref}`), h('div', { class: 'row' }, statusTag(r.status), r.review ? statusTag(r.review) : null, h('span', { class: 'meta' }, `${r.id} · ${fmtDate(r.createdAt)}${r.durationMs ? ` · ${Math.round(r.durationMs / 1000)}s` : ''}`))),
+      open ? h('div', { class: 'row' },
+        h('button', { class: 'btn good', onclick: () => act(() => api('POST', B(`/runs/${r.id}/review`), { action: 'keep' }), 'Kept') }, 'Keep changes'),
+        h('button', { class: 'btn bad', onclick: () => act(() => api('POST', B(`/runs/${r.id}/review`), { action: 'undo' }), 'Changes undone') }, 'Undo all')) : null),
+    r.status === 'running' || r.status === 'queued' ? h('p', { class: 'note' }, h('span', { class: 'spin' }), ' Working in the brand folder… larger skills can take several minutes.') : null,
+    r.error ? h('p', { class: 'tag bad' }, r.error) : null,
+    r.summary ? h('p', {}, r.summary) : null,
+    r.changes?.length ? h('div', {}, h('h3', {}, `File changes (${r.changes.length})`),
+      h('ul', {}, r.changes.map((c) => h('li', {}, h('code', {}, icon[c.change]), ' ',
+        c.change !== 'deleted' && /\.(md|html|csv)$/.test(c.path) ? h('a', { href: '#/brand', onclick: () => { S.file = c.path; } }, c.path) : c.path,
+        h('span', { class: 'meta' }, ` ${c.change}`))))) : (r.review === 'No changes' ? h('p', { class: 'note' }, 'No files were changed.') : null),
+    r.nextActions?.length ? h('details', {}, h('summary', {}, 'Suggested next actions'), h('ul', {}, r.nextActions.map((x) => h('li', {}, x)))) : null,
+    r.unsure?.length ? h('div', { class: 'qc revise' }, h('strong', {}, 'Unverified:'), h('ul', {}, r.unsure.map((u) => h('li', {}, u)))) : null,
+    r.undo ? h('p', { class: 'note' }, `Restored ${r.undo.restored.length} file(s).${r.undo.conflicts.length ? ` Not restored: ${r.undo.conflicts.join('; ')}` : ''}`) : null);
+}
+
 function pageApprovals() {
+  const workerRuns = S.state.runs.filter((r) => r.kind === 'worker');
+  const pending = workerRuns.filter((r) => r.review === 'Pending review').length;
+  const tabs = h('div', { class: 'row', style: 'margin-bottom:14px' },
+    h('button', { class: `btn ${S.approvalsTab === 'drafts' ? 'primary' : ''}`, onclick: () => { S.approvalsTab = 'drafts'; render(); } }, 'Drafts to post'),
+    h('button', { class: `btn ${S.approvalsTab === 'changes' ? 'primary' : ''}`, onclick: () => { S.approvalsTab = 'changes'; render(); } }, `File changes by agents${pending ? ` (${pending} to review)` : ''}`));
+  if (S.approvalsTab === 'changes') {
+    return h('div', {},
+      h('h1', {}, 'Approvals'),
+      h('p', { class: 'sub' }, 'Skill Workers may create and edit files in this brand\'s folder (never data/ or the office database, and they can\'t run commands). Every run is snapshotted first: keep the changes, or undo them all.'),
+      tabs,
+      workerRuns.length ? workerRuns.map(changeCard) : h('p', { class: 'empty' }, 'No skill runs yet. Use "Run skill" on a task, the Skills page, or the Orchestrator.'));
+  }
   const filters = ['Awaiting approval', 'Generating', 'Approved', 'Rejected', 'Failed', 'All'];
   const items = S.state.drafts.filter((d) => S.approvalsFilter === 'All' || d.status === S.approvalsFilter).reverse();
   return h('div', {},
     h('div', { class: 'row spread' }, h('h1', {}, 'Approvals'), h('button', { class: 'btn sm', onclick: () => download('drafts') }, 'Export CSV')),
     h('p', { class: 'sub' }, 'Nothing goes public without you. Approve, ask for a revision, or reject. Approved drafts are saved to the brand folder for you to post.'),
+    tabs,
     h('div', { class: 'row', style: 'margin-bottom:14px' }, filters.map((f) => {
       const n = f === 'All' ? S.state.drafts.length : S.state.drafts.filter((d) => d.status === f).length;
       return h('button', { class: `btn sm ${S.approvalsFilter === f ? 'primary' : ''}`, onclick: () => { S.approvalsFilter = f; render(); } }, `${f} (${n})`);
@@ -329,6 +366,100 @@ function pageLeads() {
       h('button', { class: 'btn primary', style: 'margin-top:10px', onclick: () => act(() => api('POST', B('/leads'), { businessName: manual.name.value, sourceUrl: manual.source.value, website: manual.website.value, area: manual.area.value, niche: manual.niche.value, fitReason: manual.fit.value }), 'Lead added') }, 'Add lead')));
 }
 
+function planCard(p) {
+  const editable = ['Proposed', 'Stopped'].includes(p.status);
+  return h('div', { class: 'panel' },
+    h('div', { class: 'row spread' },
+      h('div', {}, h('h3', {}, p.title || 'Planning…'), h('div', { class: 'row' }, statusTag(p.status), h('span', { class: 'meta' }, `${p.id} · ${fmtDate(p.createdAt)}`))),
+      h('div', { class: 'row' },
+        editable ? h('button', { class: 'btn primary', onclick: () => act(() => api('POST', B(`/plans/${p.id}/run`)), p.status === 'Stopped' ? 'Resuming the plan…' : 'Plan started. Steps run one at a time.') }, p.status === 'Stopped' ? 'Resume plan' : 'Approve & run plan') : null,
+        ['Proposed', 'Running', 'Stopped', 'Planning'].includes(p.status) ? h('button', { class: 'btn bad', onclick: () => act(() => api('POST', B(`/plans/${p.id}/cancel`)), 'Plan cancelled') }, 'Cancel') : null)),
+    h('p', { class: 'meta' }, `Goal: ${p.goal}`),
+    p.error ? h('p', { class: 'tag bad' }, p.error) : null,
+    p.status === 'Planning' ? h('p', { class: 'note' }, h('span', { class: 'spin' }), ' The Orchestrator is choosing skills and ordering the steps…') : null,
+    p.steps.length ? h('div', { class: 'tbl' }, h('table', {},
+      h('thead', {}, h('tr', {}, ['#', 'Step', 'Agent', 'Skill', 'Needs', 'Status', 'Result', ''].map((x) => h('th', {}, x)))),
+      h('tbody', {}, p.steps.map((st) => {
+        const instr = h('textarea', { style: 'min-height:60px' }, st.instructions || '');
+        return h('tr', {},
+          h('td', {}, st.n),
+          h('td', {}, h('strong', {}, st.title), st.instructions ? h('details', {}, h('summary', {}, 'Instructions'), editable && st.status !== 'Done'
+            ? [instr, h('button', { class: 'btn sm', onclick: () => act(() => api('PATCH', B(`/plans/${p.id}`), { n: st.n, instructions: instr.value }), 'Saved') }, 'Save')]
+            : h('div', { class: 'meta' }, st.instructions)) : null,
+            st.agent === 'research' ? h('div', { class: 'meta' }, `${st.niche} · ${st.area}`) : null,
+            st.agent === 'content' && st.platform ? h('div', { class: 'meta' }, st.platform) : null),
+          h('td', {}, st.agent),
+          h('td', {}, st.skill ? h('code', {}, st.skill) : h('span', { class: 'tag bad' }, 'none')),
+          h('td', {}, st.dependsOn.length ? st.dependsOn.join(', ') : '—'),
+          h('td', {}, statusTag(st.status)),
+          h('td', {}, st.error ? h('span', { class: 'tag bad' }, st.error) : st.summary || '', st.files?.length ? h('div', { class: 'meta' }, st.files.join(', ')) : null),
+          h('td', {}, editable && st.status !== 'Done' ? h('button', { class: 'btn sm', onclick: () => act(() => api('PATCH', B(`/plans/${p.id}`), { n: st.n, skip: st.status !== 'Skipped' })) }, st.status === 'Skipped' ? 'Include' : 'Skip') : null));
+      })))) : null);
+}
+
+function pageOrchestrator() {
+  const ta = h('textarea', { placeholder: 'e.g. Prepare the Belated ITR campaign: carousel plan, flyer copy and WhatsApp messages', maxlength: 2000 });
+  const presets = [
+    'Prepare the Belated ITR (31 Dec) campaign: content plan, flyer copy, WhatsApp reply templates and 2 carousel drafts',
+    'Build a 30-day content calendar and write the first week of Instagram posts',
+    'Local SEO sprint: Google Business Profile description, services list, and drafts of 2 locality pages',
+    'Write the WhatsApp Business setup: catalogue texts, quick replies and the review-request message',
+  ];
+  return h('div', {},
+    h('h1', {}, 'Orchestrator'),
+    h('p', { class: 'sub' }, `Give a goal. The Orchestrator picks skills from your library (${S.skillStats?.count ?? '…'} skills) and plans the steps for the Skill Worker, Research and Content agents. You approve the plan, then the steps run in order, each building on the last. Files go into the brand folder, where you can review and undo them. Posts go to Approvals.`),
+    h('section', { class: 'panel' }, ta,
+      h('div', { class: 'row spread', style: 'margin-top:10px' },
+        h('div', { class: 'row' }, presets.map((x) => h('span', { class: 'chip', onclick: () => { ta.value = x; ta.focus(); } }, x))),
+        h('button', { class: 'btn primary', onclick: () => act(async () => { await api('POST', B('/plans'), { goal: ta.value }); ta.value = ''; }, 'Planning… the plan appears below for your approval') }, 'Make a plan'))),
+    S.state.plans.length ? S.state.plans.map(planCard) : h('p', { class: 'empty' }, 'No plans yet.'));
+}
+
+async function loadSkills() {
+  const q = new URLSearchParams({ q: S.skillQuery.q, source: S.skillQuery.source, category: S.skillQuery.category, limit: 80 });
+  try {
+    const r = await api('GET', `/api/skills?${q}`);
+    S.skillResults = r.skills;
+    S.skillStats = r.stats;
+    if (S.page === 'skills' && !userIsTyping()) render();
+  } catch (e) { toast(e.message, true); }
+}
+
+function pageSkills() {
+  if (!S.skillResults) loadSkills();
+  const st = S.skillStats;
+  const search = h('input', { placeholder: 'Search skills, e.g. carousel, reel, seo, singha, competitor', value: S.skillQuery.q, style: 'flex:2;min-width:220px',
+    oninput: (e) => { S.skillQuery.q = e.target.value; clearTimeout(pageSkills.t); pageSkills.t = setTimeout(loadSkills, 300); } });
+  const sel = (key, opts, label) => h('select', { 'aria-label': label, onchange: (e) => { S.skillQuery[key] = e.target.value; loadSkills(); } },
+    h('option', { value: '' }, label), Object.entries(opts || {}).sort((a, b) => b[1] - a[1]).map(([k, n]) => h('option', { value: k, selected: S.skillQuery[key] === k }, `${k} (${n})`)));
+  const card = (s) => {
+    const task = h('input', { placeholder: 'What should it do for this brand?', style: 'flex:2;min-width:200px' });
+    const instr = h('input', { placeholder: 'Extra instructions (optional)', style: 'flex:1;min-width:160px' });
+    const runBox = h('div', { hidden: true, class: 'row', style: 'margin-top:8px' }, task, instr,
+      h('button', { class: 'btn primary sm', onclick: () => act(() => api('POST', B('/skills/run'), { skillId: s.id, task: task.value, instructions: instr.value }), 'Skill Worker started. Review the file changes in Approvals.') }, 'Run'));
+    const prev = S.skillPreview[s.id];
+    return h('div', { class: 'card' },
+      h('div', { class: 'row spread' }, h('div', { class: 't' }, s.name), h('div', { class: 'row' }, h('span', { class: 'tag muted' }, s.source), h('span', { class: 'tag' }, s.category))),
+      h('div', { class: 'meta' }, s.description),
+      h('div', { class: 'row', style: 'margin-top:8px' },
+        h('code', { class: 'meta' }, s.id),
+        h('button', { class: 'btn sm', onclick: async () => {
+          if (S.skillPreview[s.id]) delete S.skillPreview[s.id];
+          else S.skillPreview[s.id] = await api('GET', `/api/skill?id=${encodeURIComponent(s.id)}`).catch((e) => { toast(e.message, true); return null; });
+          render();
+        } }, prev ? 'Hide' : 'Preview'),
+        h('button', { class: 'btn sm primary', onclick: () => { runBox.hidden = !runBox.hidden; } }, `Run for ${S.brand?.name || 'brand'}`)),
+      runBox,
+      prev ? h('div', { class: 'draft-body', style: 'max-height:420px;overflow:auto' }, md(prev.main.replace(/^---[\s\S]*?---/, '')), prev.resources.length ? h('p', { class: 'note' }, `Reference files: ${prev.resources.join(', ')}`) : null) : null);
+  };
+  return h('div', {},
+    h('div', { class: 'row spread' }, h('h1', {}, 'Skills'),
+      h('button', { class: 'btn sm', title: 'Copy the latest skills from your personal Claude account (~/.claude) into skills-library/', onclick: () => act(async () => { const r = await api('POST', '/api/skills/sync'); S.skillResults = null; S.skillStats = r.stats; }, 'Skills synced from your Claude account') }, 'Sync from my Claude')),
+    h('p', { class: 'sub' }, st ? `${st.count} skills: the hub's ${st.bySource.hub || 0} plus ${st.count - (st.bySource.hub || 0)} from your personal Claude account${st.syncedAt ? ` (synced ${fmtDate(st.syncedAt)})` : ' (not synced yet: click "Sync from my Claude")'}. Agents choose from these automatically; you can also run any of them directly.` : 'Loading…'),
+    h('div', { class: 'panel row' }, search, sel('source', st?.bySource, 'All sources'), sel('category', st?.byCategory, 'All categories')),
+    S.skillResults ? (S.skillResults.length ? h('div', { class: 'grid two' }, S.skillResults.map(card)) : h('p', { class: 'empty' }, 'No skills match.')) : h('p', {}, h('span', { class: 'spin' }), ' Loading skills…'));
+}
+
 function pageBrand() {
   const b = S.brand;
   const viewer = h('div', { class: 'viewer' });
@@ -372,7 +503,7 @@ function pageActivity() {
     runs.length ? h('div', { class: 'panel tbl' }, h('table', {},
       h('thead', {}, h('tr', {}, ['Run', 'Agent', 'For', 'Status', 'Time', 'Cost', 'Started', 'Problem'].map((x) => h('th', {}, x)))),
       h('tbody', {}, runs.map((r) => h('tr', {},
-        h('td', {}, r.id), h('td', {}, r.agent), h('td', {}, r.ref), h('td', {}, statusTag(r.status)),
+        h('td', {}, r.id), h('td', {}, r.agent, r.skill ? h('div', { class: 'meta' }, r.skill) : null), h('td', {}, r.ref), h('td', {}, statusTag(r.status)),
         h('td', {}, r.durationMs ? `${Math.round(r.durationMs / 1000)}s` : ''), h('td', {}, r.costUsd ? `$${r.costUsd.toFixed(3)}` : ''),
         h('td', {}, fmtDate(r.createdAt)), h('td', {}, r.error || '')))))) : h('p', { class: 'empty' }, 'No AI runs yet.'));
 }
@@ -392,11 +523,11 @@ async function download(collection) {
 }
 
 // ───────────── shell ─────────────
-const PAGES = { today: pageToday, command: pageCommand, tasks: pageTasks, approvals: pageApprovals, leads: pageLeads, brand: pageBrand, activity: pageActivity };
+const PAGES = { today: pageToday, command: pageCommand, orchestrator: pageOrchestrator, tasks: pageTasks, approvals: pageApprovals, leads: pageLeads, skills: pageSkills, brand: pageBrand, activity: pageActivity };
 
 function render() {
   for (const a of document.querySelectorAll('#nav a')) a.classList.toggle('on', a.dataset.page === S.page);
-  const awaiting = S.state ? S.state.drafts.filter((d) => d.status === 'Awaiting approval').length : 0;
+  const awaiting = S.state ? S.state.drafts.filter((d) => d.status === 'Awaiting approval').length + (S.state.reviews || 0) : 0;
   const verify = S.state ? S.state.leads.filter((l) => l.reviewStatus === 'Needs human verification').length : 0;
   Object.assign($('#badge-approvals'), { hidden: !awaiting, textContent: awaiting });
   Object.assign($('#badge-leads'), { hidden: !verify, textContent: verify });
@@ -453,7 +584,7 @@ async function poll() {
   try {
     await refresh();
   } catch { /* transient; next poll retries */ }
-  const busy = S.state && (S.state.busy || S.state.drafts.some((d) => d.status === 'Generating'));
+  const busy = S.state && (S.state.busy || S.state.drafts.some((d) => d.status === 'Generating') || S.state.plans.some((p) => ['Planning', 'Running'].includes(p.status)));
   setTimeout(poll, busy ? 3000 : 15000);
 }
 
@@ -474,6 +605,7 @@ async function boot() {
     sel.onchange = () => loadBrand(sel.value);
     if (pick) await loadBrand(pick);
     else render();
+    loadSkills();
   } catch (e) {
     main.replaceChildren(h('div', { class: 'empty' }, `Could not reach the office server: ${e.message}`));
   }

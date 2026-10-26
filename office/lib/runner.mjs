@@ -1,8 +1,11 @@
 // Runs an agent through the Claude Code CLI in print mode, on the owner's Claude plan.
-// Least privilege: each run gets only the tools its agent lists, no MCP servers, no session
-// persistence, and an empty temp working directory (so no repo files or CLAUDE.md are in reach).
+// Least privilege: each run gets only the tools its agent lists, no MCP servers and no session
+// persistence. Read-only agents run in an empty temp dir. Edit agents (agent.edit) run in the
+// brand folder in --restricted mode (no command tools, file tools confined to that folder) with
+// office/ and data/ denied.
 import { spawn, execFileSync } from 'node:child_process';
 import { promises as fs, existsSync, readdirSync } from 'node:fs';
+import { EDIT_DENY } from './agents.mjs';
 import os from 'node:os';
 import path from 'node:path';
 import { InvalidOutput } from './agents.mjs';
@@ -47,12 +50,14 @@ export class ClaudeRunner {
     return Boolean(this.bin);
   }
 
-  async run(agent, prompt) {
-    const cwd = await fs.mkdtemp(path.join(os.tmpdir(), 'office-run-'));
+  async run(agent, prompt, { cwd: workDir } = {}) {
+    if (agent.edit && !workDir) throw new Error('Edit agents need a working directory');
+    const cwd = agent.edit ? workDir : await fs.mkdtemp(path.join(os.tmpdir(), 'office-run-'));
     const tools = agent.tools.join(',');
     const args = ['-p', '--output-format', 'json', '--no-session-persistence', '--strict-mcp-config',
       '--permission-mode', 'dontAsk', '--tools', tools];
     if (tools) args.push('--allowedTools', tools);
+    if (agent.edit) args.push('--restricted', '--disallowedTools', ...EDIT_DENY);
     if (this.model) args.push('--model', this.model);
     try {
       const raw = await spawnWithTimeout(this.bin, args, prompt, cwd, agent.timeoutMs);
@@ -65,7 +70,7 @@ export class ClaudeRunner {
       if (envelope.is_error) throw new Error(String(envelope.result || envelope.subtype || 'Claude run failed').slice(0, 300));
       return { text: envelope.result, costUsd: envelope.total_cost_usd ?? null };
     } finally {
-      fs.rm(cwd, { recursive: true, force: true }).catch(() => {});
+      if (!agent.edit) fs.rm(cwd, { recursive: true, force: true }).catch(() => {});
     }
   }
 }
@@ -103,11 +108,18 @@ export class MockRunner {
     return true;
   }
 
-  async run(agent, prompt) {
-    this.calls.push({ agent: agent.label, prompt });
+  async run(agent, prompt, { cwd } = {}) {
+    this.calls.push({ agent: agent.label, prompt, cwd });
+    if (agent.label === 'Skill Worker') {
+      // Simulates a worker saving a deliverable, so snapshot/undo can be tested.
+      await fs.mkdir(path.join(cwd, '04-content'), { recursive: true });
+      await fs.writeFile(path.join(cwd, '04-content', 'mock-deliverable.md'), '# Mock deliverable\n');
+      await fs.appendFile(path.join(cwd, 'LOG.md'), 'mock · worker · 04-content/mock-deliverable.md\n');
+      return { text: JSON.stringify({ summary: 'Wrote the mock deliverable.', files: ['04-content/mock-deliverable.md'], next_actions: ['Review it'], unsure: [] }), costUsd: 0 };
+    }
     const fixtures = {
       'AI Manager': { tasks: [
-        { task: 'Write an Instagram carousel on GST due dates', priority: 'High', owner: 'Content Agent', deadline: '', notes: 'Hinglish, 6 slides', skill: 'social' },
+        { task: 'Write an Instagram carousel on GST due dates', priority: 'High', owner: 'Content Agent', deadline: '', notes: 'Hinglish, 6 slides', skill: 'hub/social' },
         { task: 'Research boutiques in Uttam Nagar', priority: 'Medium', owner: 'Research Agent', deadline: '', notes: '', skill: 'prospecting' },
       ] },
       'Content Agent': { title: 'GST due dates carousel', platform: 'Instagram', body: 'GST ki due date yaad hai? GSTR-1: 11th · GSTR-3B: 20th. Hum yaad rakhte hain. WhatsApp karein.', visual: 'Slide 1: hook', unsure: ['Verify QRMP dates'] },
@@ -115,6 +127,12 @@ export class MockRunner {
       'Research Agent': { leads: [
         { business_name: 'Example Boutique', website: 'https://example.com', niche: 'Boutique', area: 'Uttam Nagar', source_url: 'https://example.com/about', public_contact: '', fit_reason: 'New shop listing' },
         { business_name: 'No Source Traders', website: '', niche: 'Trader', area: 'Palam', source_url: '', fit_reason: 'Missing source, must be dropped' },
+      ] },
+      Orchestrator: { title: 'Content sprint', steps: [
+        { title: 'Plan the month', agent: 'worker', skill: 'hub/social', instructions: 'Make the calendar', depends_on: [] },
+        { title: 'Find leads', agent: 'research', skill: 'hub/prospecting', instructions: '', niche: 'boutiques', area: 'Uttam Nagar', depends_on: [] },
+        { title: 'Research without area is dropped', agent: 'research', skill: 'hub/prospecting', depends_on: [] },
+        { title: 'Write the first post', agent: 'content', skill: 'hub/social', platform: 'Instagram', instructions: 'Use step 1', depends_on: [1] },
       ] },
       'Follow-up Agent': { title: 'Intro message', platform: 'WhatsApp', body: 'Namaste! Kya aapki GST filing time pe ho rahi hai?', unsure: [] },
     };

@@ -41,3 +41,33 @@ Trade-off: Up to 3 s UI lag; extra requests while busy.
 ## D-007: Hard daily cap on AI runs (default 40) and max 2 concurrent runs
 Why: Cost limits from the guide's security checklist. Routines can't run away.
 Trade-off: The in-memory counter resets on restart.
+
+## D-008: Personal skills library (973 skills) shared by all agents
+Date: 2026-10-27 · Model: claude-opus-5-5
+Context: Owner asked to use the skills from their personal Claude account inside the office.
+Options:
+1) copy everything into `.claude/skills` (Claude Code would list ~970 skills in every session: noisy, slow, and names collide with the hub's)
+2) point agents at `~/.claude` directly (it breaks on another machine, and the sync folders are internal)
+3) copy into `skills-library/` with an index; agents get candidates by keyword search plus all hub skills.
+Chosen: 3. `office/scripts/sync-skills.mjs` re-creates the folder; it's git-ignored (re-creatable, and it holds third-party skills that shouldn't go to a public repo).
+Trade-off: keyword search can miss a skill whose words don't match the request, so hub skills are always offered.
+Revisit if: the search picks badly. Then add descriptions-based ranking with a cheap model call.
+
+## D-009: Skill Workers may edit files (supersedes "never give agents write tools")
+Date: 2026-10-27 · Model: claude-opus-5-5
+Context: Owner explicitly asked to give agents permission to edit.
+Options: 1) keep agents read-only (server writes) 2) full repo write access 3) write access confined to one brand folder, with undo.
+Chosen: 3.
+- The runner uses `--restricted` (no Bash or other command tools; file tools confined to the cwd).
+- cwd = `brands/<slug>/`.
+- Deny rules for `./office/**` and `./data/**`.
+- A snapshot before every run, with a diff and Keep / Undo-all review; undo skips files edited again since the run.
+- One worker per brand at a time.
+Verified with the real CLI on 2026-10-27: write inside allowed; office/, data/ and outside the folder denied (nothing created on disk).
+Trade-off: a prompt-injected page could make a worker write junk files in the brand folder. That's contained to one folder, visible in review, and undoable. Binary files can't be restored by undo.
+Revisit if: workers need to touch the website repo or other brands. That would need a separate decision.
+
+## D-010: Orchestrator proposes, owner approves, steps run sequentially
+Options: 1) fully autonomous multi-agent run 2) plan → approval → sequential execution 3) parallel DAG execution.
+Chosen: 2. The owner approves the plan before anything runs ("approve the plan, then the code"). Steps run one at a time, so each builds on the last and the worker lock stays simple. A failed step stops the plan; Resume re-runs only that step (no auto-retry).
+Trade-off: slower than parallel; ≤8 steps per plan.

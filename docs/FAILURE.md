@@ -14,3 +14,8 @@
 | Daily cap reached | — | 429 "Daily AI run limit reached…" | Toast + sidebar counter |
 | Growth | leads.json > ~5k rows | Slower whole-file writes (still fine at this size) | Revisit D-003 |
 | Routines while the server is off | Slot missed | Runs once at the next tick after restart (one catch-up, not one per missed slot) | `lastRunAt` on the Leads page |
+| Skill Worker times out (15 min) or errors mid-run | Partial files may exist | The diff still records every change it made; review shows them with Keep/Undo; the task is marked Blocked | Approvals → File changes |
+| Worker returns no JSON | Not retried (could repeat edits) | Run "error", changes still listed for review | Same |
+| Undo after the owner edited the file again | — | That file is skipped and reported as a conflict | Note on the run card |
+| skills-library not synced (new machine) | — | Only the 54 hub skills are offered; Skills page says "not synced" | Skills page → "Sync from my Claude" |
+| Plan step fails | — | Plan "Stopped" with the step's error; Resume re-runs only that step | Orchestrator page |

@@ -12,17 +12,28 @@ import { createServer, toCsv } from '../server.mjs';
 async function setup(opts = {}) {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'office-test-'));
   const brandsDir = path.join(root, 'brands');
-  const skillsDir = path.join(root, 'skills');
   await fs.mkdir(path.join(brandsDir, 'acme', 'data'), { recursive: true });
   await fs.mkdir(path.join(brandsDir, 'acme', 'reports'), { recursive: true });
-  for (const s of ['social', 'prospecting']) await fs.mkdir(path.join(skillsDir, s), { recursive: true });
+  const hub = { social: 'Social media content and posts', prospecting: 'Find and qualify prospects' };
+  for (const [name, desc] of Object.entries(hub)) {
+    await fs.mkdir(path.join(root, '.claude', 'skills', name), { recursive: true });
+    await fs.writeFile(path.join(root, '.claude', 'skills', name, 'SKILL.md'), `---\nname: ${name}\ndescription: "${desc}"\n---\n# ${name}\nSteps for ${name}.`);
+  }
+  // A personal skill as sync-skills.mjs would have copied it, with a reference file.
+  const lib = path.join(root, 'skills-library');
+  await fs.mkdir(path.join(lib, 'personal', 'acme-carousel', 'references'), { recursive: true });
+  await fs.writeFile(path.join(lib, 'personal', 'acme-carousel', 'SKILL.md'), '---\nname: acme-carousel\ndescription: Branded carousel design for Acme\n---\n# Carousel method');
+  await fs.writeFile(path.join(lib, 'personal', 'acme-carousel', 'references', 'palette.md'), 'Navy #0A1E3F');
+  await fs.writeFile(path.join(lib, 'index.json'), JSON.stringify({ syncedAt: '2026-10-27T00:00:00Z', skills: [
+    { id: 'personal/acme-carousel', name: 'acme-carousel', description: 'Branded carousel design for Acme', source: 'personal', path: 'skills-library/personal/acme-carousel', category: 'social' },
+  ] }));
   await fs.writeFile(path.join(brandsDir, 'acme', 'brand.md'), '# Brand profile: Acme\n- **Brand name:** Acme\n- **Goal:** TODO\n');
   await fs.writeFile(path.join(brandsDir, 'acme', 'LOG.md'), '# Log\n');
   await fs.writeFile(path.join(brandsDir, 'acme', 'data', 'secret.md'), 'private export');
   await fs.writeFile(path.join(brandsDir, 'acme', 'reports', 'r.html'), '<h1>Report</h1>');
   const runner = opts.runner || new MockRunner();
-  const office = await new Office({ brandsDir, skillsDir, runner, dailyRunLimit: opts.limit || 50 }).init();
-  return { office, runner, brandsDir };
+  const office = await new Office({ brandsDir, root, runner, dailyRunLimit: opts.limit || 50 }).init();
+  return { office, runner, brandsDir, root };
 }
 
 test('AI Manager turns a request into validated tasks', async () => {
@@ -32,7 +43,7 @@ test('AI Manager turns a request into validated tasks', async () => {
   const tasks = await office.store.read('acme', 'tasks');
   assert.equal(tasks.length, 2);
   assert.equal(tasks[0].id, 'T-0001');
-  assert.equal(tasks[0].skill, 'social');
+  assert.equal(tasks[0].skill, 'hub/social');
   assert.equal(tasks[0].status, 'Pending');
   const runs = await office.store.read('acme', 'runs');
   assert.equal(runs[0].status, 'ok');
@@ -178,4 +189,100 @@ test('HTTP: CSRF guard, unknown brand, sandboxed reports, CSV formula escaping',
     server.close();
   }
   assert.equal(toCsv([{ a: '=HYPERLINK("x")' }]).split('\n')[1], `"'=HYPERLINK(""x"")"`);
+});
+
+test('skill library: hub + personal skills, search, resolve, content with references', async () => {
+  const { office } = await setup();
+  const lib = office.skills;
+  assert.equal(lib.stats().count, 3);
+  assert.equal(lib.resolve('social').id, 'hub/social'); // bare names from older tasks still work
+  assert.equal(lib.search('carousel', { brandHint: 'acme' })[0].id, 'personal/acme-carousel');
+  const c = await lib.content('personal/acme-carousel');
+  assert.match(c.main, /Carousel method/);
+  assert.deepEqual(c.resources.map((r) => r.path), ['references/palette.md']);
+  assert.equal(await lib.content('../../etc/passwd'), null);
+});
+
+test('skill worker edits files in the brand folder; changes can be kept or undone', async () => {
+  const { office, brandsDir, runner } = await setup();
+  const task = await office.addTask('acme', { task: 'Make a carousel', skill: 'personal/acme-carousel' });
+  await office.runSkill('acme', task.id);
+  await office.idle();
+  const call = runner.calls.find((c) => c.agent === 'Skill Worker');
+  assert.equal(call.cwd, path.join(brandsDir, 'acme'));
+  assert.match(call.prompt, /Carousel method/);
+  assert.match(call.prompt, /Navy #0A1E3F/);
+  const run = (await office.store.read('acme', 'runs')).find((r) => r.kind === 'worker');
+  assert.equal(run.review, 'Pending review');
+  assert.deepEqual(run.changes, [{ path: '04-content/mock-deliverable.md', change: 'created' }, { path: 'LOG.md', change: 'modified' }]);
+  assert.equal((await office.store.read('acme', 'tasks'))[0].status, 'Done');
+
+  await office.reviewRun('acme', run.id, { action: 'undo' });
+  await assert.rejects(fs.stat(path.join(brandsDir, 'acme', '04-content', 'mock-deliverable.md')));
+  assert.equal(await fs.readFile(path.join(brandsDir, 'acme', 'LOG.md'), 'utf8'), '# Log\n');
+  await assert.rejects(office.reviewRun('acme', run.id, { action: 'keep' }), { status: 409 });
+});
+
+test('undo never overwrites files edited again after the run', async () => {
+  const { office, brandsDir } = await setup();
+  const task = await office.addTask('acme', { task: 'x', skill: 'hub/social' });
+  await office.runSkill('acme', task.id);
+  await office.idle();
+  const file = path.join(brandsDir, 'acme', '04-content', 'mock-deliverable.md');
+  await fs.writeFile(file, 'owner edited this');
+  const run = (await office.store.read('acme', 'runs')).find((r) => r.kind === 'worker');
+  const res = await office.reviewRun('acme', run.id, { action: 'undo' });
+  assert.equal(await fs.readFile(file, 'utf8'), 'owner edited this');
+  assert.match(res.undo.conflicts[0], /changed again/);
+  await assert.rejects(office.runSkill('acme', (await office.addTask('acme', { task: 'no skill' })).id), /no skill/);
+});
+
+test('orchestrator plans with valid skills, waits for approval, then runs steps in order', async () => {
+  const { office, brandsDir } = await setup();
+  const plan = await office.plan('acme', 'Content sprint for November');
+  await office.idle();
+  let p = (await office.store.read('acme', 'plans'))[0];
+  assert.equal(p.id, plan.id);
+  assert.equal(p.status, 'Proposed');
+  assert.deepEqual(p.steps.map((s) => s.agent), ['worker', 'research', 'content']); // research step without area dropped
+  assert.equal(p.steps[0].skill, 'hub/social');
+  assert.equal(p.steps[1].skill, 'hub/prospecting');
+  assert.deepEqual(p.steps[2].dependsOn, [1]);
+  assert.ok(!(await office.store.read('acme', 'tasks')).length, 'nothing runs before approval');
+
+  await office.updatePlan('acme', p.id, { n: 2, skip: true });
+  await office.runPlan('acme', p.id);
+  await office.idle();
+  p = (await office.store.read('acme', 'plans'))[0];
+  assert.equal(p.status, 'Done');
+  assert.deepEqual(p.steps.map((s) => s.status), ['Done', 'Skipped', 'Done']);
+  assert.ok(await fs.stat(path.join(brandsDir, 'acme', '04-content', 'mock-deliverable.md')));
+  const draft = (await office.store.read('acme', 'drafts'))[0];
+  assert.equal(draft.status, 'Awaiting approval');
+  assert.equal(p.steps[2].draftId, draft.id);
+  await assert.rejects(office.runPlan('acme', p.id), { status: 409 });
+});
+
+test('a failed plan step stops the plan; resume re-runs only that step', async () => {
+  let failWorker = true;
+  const runner = new MockRunner();
+  const base = runner.run.bind(runner);
+  runner.run = async (agent, prompt, opts) => {
+    if (agent.label === 'Skill Worker' && failWorker) throw new Error('Timed out after 900s');
+    return base(agent, prompt, opts);
+  };
+  const { office } = await setup({ runner });
+  const plan = await office.plan('acme', 'sprint');
+  await office.idle();
+  await office.runPlan('acme', plan.id);
+  await office.idle();
+  let p = (await office.store.read('acme', 'plans'))[0];
+  assert.equal(p.status, 'Stopped');
+  assert.equal(p.steps[0].status, 'Failed');
+  assert.equal(p.steps[1].status, 'Planned');
+  failWorker = false;
+  await office.runPlan('acme', plan.id);
+  await office.idle();
+  p = (await office.store.read('acme', 'plans'))[0];
+  assert.equal(p.status, 'Done');
 });

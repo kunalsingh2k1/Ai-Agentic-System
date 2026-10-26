@@ -2,7 +2,17 @@
 
 Read first: ARCHITECTURE.md, CONSTRAINTS.md. Update this file at the end of every session (newest on top).
 
-## Latest session: 2026-10-27 (model: claude-opus-5-5)
+## Latest session: 2026-10-27 (b) (model: claude-opus-5-5)
+Done:
+- skills-library: 973 skills (919 personal + 54 hub) via office/scripts/sync-skills.mjs (git-ignored)
+- Agents use skills: the Manager and Orchestrator pick from the library; the Content Agent and the new Skill Worker get the skill's SKILL.md + references
+- Skill Worker edits files in brands/<slug>/ (restricted, office/data denied, snapshot + Keep/Undo); verified with the real CLI
+- Orchestrator: goal → plan → owner approval → ordered steps (worker/research/content), resume on failure
+- 16 tests passing
+Next:
+- Owner reviews the first real worker run (T-0007 flyer) in Approvals → File changes
+
+## Session: 2026-10-27 (a) (model: claude-opus-5-5)
 Done:
 - /hub-strategy for singha-tax-consultants: voice guide, messaging, offers, loops, 22-week plan, one-page summary; SCORECARD targets; 10 tasks seeded into the office (T-0001..T-0010)
 In progress:

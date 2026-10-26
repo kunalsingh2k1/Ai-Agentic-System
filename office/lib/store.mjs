@@ -4,7 +4,7 @@
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
 
-const PREFIX = { tasks: 'T', drafts: 'D', leads: 'L', runs: 'R', log: 'G', routines: 'W' };
+const PREFIX = { tasks: 'T', drafts: 'D', leads: 'L', runs: 'R', log: 'G', routines: 'W', plans: 'P' };
 const CAPS = { runs: 500 }; // keep run history bounded
 
 export class Store {
