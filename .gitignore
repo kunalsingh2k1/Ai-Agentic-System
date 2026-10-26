@@ -1,0 +1,4 @@
+# Brand data exports and local state stay private
+brands/*/data/*
+!brands/*/data/.gitkeep
+brands/.active
